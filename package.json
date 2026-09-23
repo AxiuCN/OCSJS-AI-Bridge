@@ -1,0 +1,29 @@
+{
+  "name": "ocs-ai-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OCSJS 题库协议 ↔ 可插拔 AI 后端 的适配服务",
+  "type": "module",
+  "main": "dist/server.js",
+  "engines": {
+    "node": ">=22.9.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env dist/server.js",
+    "dev": "tsx src/server.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "smoke": "tsx scripts/smoke-live.ts",
+    "smoke:multi": "tsx scripts/smoke-multibackend.ts",
+    "smoke:concurrency": "tsx scripts/smoke-concurrency.ts",
+    "smoke:routing": "tsx scripts/smoke-routing.ts",
+    "doctor": "tsx scripts/doctor.ts",
+    "show-config": "tsx src/server.ts show-config"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

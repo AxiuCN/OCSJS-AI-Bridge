@@ -1,0 +1,111 @@
+﻿// OCS AI 桥接服务 · 配置示例
+//
+// 复制为 config.jsonc 后按需修改（config.jsonc 已被 .gitignore 排除，不会提交）。
+// 语法为标准 JSON，额外支持 // 注释与尾随逗号。
+// 字符串内可用 ${VAR} 引用环境变量，${VAR:-默认值} 提供缺省值；
+// 引用了未设置且无默认值的变量时，启动会直接失败并指出字段路径。
+{
+  "server": {
+    // 监听地址。0.0.0.0 表示所有网卡；只想本机访问可改为 127.0.0.1:8000。
+    "listen": "0.0.0.0:8000",
+
+    // OCS 题库配置里的 X-Access-Token 必须与此一致。
+    // 留空表示不校验令牌（仅限本机调试，公网部署务必设置）。
+    "access_token": "${SERVICE_ACCESS_TOKEN}",
+
+    // 总时间预算（秒）。原版 OCS 搜题上限为 180s，服务端需略短，
+    // 所有后端尝试共享这一预算，不会叠加。
+    "deadline_seconds": 170,
+
+    // 请求体上限（字节），防止超大图片题打爆内存。
+    "max_body_bytes": 8388608,
+
+    // CORS 白名单。OCS 走 GM_xmlhttpRequest，不需要浏览器 CORS；
+    // 留空即不发送 CORS 头。如改用浏览器 fetch 直连，再按需填写来源。
+    "cors_origins": []
+  },
+
+  "limits": {
+    // 单张图片的下载/读取超时（秒）。
+    "image_timeout_seconds": 30,
+    // 单题最多处理的图片数。
+    "max_images": 24,
+    // 单张图片大小上限（字节），默认 12 MiB。
+    "max_image_bytes": 12582912,
+    // 剩余预算低于该值时不再尝试候选后端（秒）。
+    "min_attempt_seconds": 5,
+    // 图片并发下载数。
+    "image_concurrency": 4
+  },
+
+  "answer": {
+    // 多答案分隔符，必须包含 #，否则 OCS 无法回填。
+    "separator": "#",
+    // 题目声明有图片却一张都读不到时拒绝作答，避免"看不见图还硬猜"。
+    "require_declared_images": true
+  },
+
+  // 可插拔 AI 后端列表。kind 三种取值：
+  //   ollama           → POST {base_url}/api/chat         （本地 Ollama 原生协议）
+  //   openai_chat      → POST {base_url}/v1/chat/completions （OpenAI 兼容，含多数网关）
+  //   openai_responses → POST {base_url}/v1/responses    （Responses API，与旧服务一致）
+  // capabilities 必须如实声明，服务不会按模型名推断：
+  //   题目含图时只会交给 vision:true 的后端；thinking 决定是否发送"思考"参数。
+  "backends": [
+    {
+      // 地址与模型一律来自环境变量（.env），示例文件里不写死任何真实地址。
+      // 未设置 OLLAMA_BASE_URL 时启动会直接失败并指出该变量名，不会静默用错地址。
+      "name": "ollama-local",
+      "kind": "ollama",
+      "base_url": "${OLLAMA_BASE_URL}",
+      "model": "${OLLAMA_MODEL}",
+      "capabilities": { "vision": true, "thinking": true },
+      "timeout_seconds": 120,
+      "max_concurrency": 2
+    }
+
+    // 在线后端示例（默认不启用）。取消注释时，请在上一个对象末尾补一个英文逗号，
+    // 然后在 .env 中填好 OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_MODEL，
+    // 最后在下方 routes 的候选链里加上它的 name。
+    // {
+    //   "name": "online-responses",
+    //   "kind": "openai_responses",
+    //   "base_url": "${OPENAI_BASE_URL}",
+    //   "api_key": "${OPENAI_API_KEY}",
+    //   "model": "${OPENAI_MODEL}",
+    //   "reasoning_effort": "xhigh",
+    //   "capabilities": { "vision": true, "thinking": false },
+    //   "timeout_seconds": 150,
+    //   "max_concurrency": 2
+    // }
+
+    // 无视觉能力的本地后端示例：只接纯文本题；
+    // 题目含图时服务会自动跳过它并记入 warnings，不会硬猜。
+    // {
+    //   "name": "ollama-coder",
+    //   "kind": "ollama",
+    //   "base_url": "${OLLAMA_BASE_URL}",
+    //   "model": "qwen3-coder:30b",
+    //   "capabilities": { "vision": false, "thinking": false },
+    //   "timeout_seconds": 120,
+    //   "max_concurrency": 1
+    // }
+  ],
+
+  // 目前只有一种策略实现：按题型在候选链中依次尝试，直到成功或用尽预算。
+  "strategy": "auto",
+
+  // 题型 → 候选后端（按顺序降级）。type 取值与 OCS 上报的题型一致：
+  //   single / multiple / judgement / completion / line / fill / reader，
+  //   以及上游自定义题型；"*" 为兜底，未命中其他规则的题型走它。
+  // 同一题型命中多条规则时，以第一条为准。
+  "routes": [
+    // 示例：多选与主观题交给更强的后端优先处理，再回落到本地。
+    // { "type": "multiple",   "backends": ["online-responses", "ollama-local"] },
+    // { "type": "completion", "backends": ["online-responses", "ollama-local"] },
+
+    // 兜底：其余题型一律先本地、失败再换在线。
+    // 只配了本地后端时，写成 { "type": "*", "backends": ["ollama-local"] } 即可。
+    { "type": "*", "backends": ["ollama-local"] }
+  ]
+}

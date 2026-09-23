@@ -1,0 +1,37 @@
+[Unit]
+Description=OCS AI Bridge（OCS 题库协议 ↔ 可插拔 AI 后端）
+Documentation=https://github.com/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 按实际部署路径与运行用户调整
+WorkingDirectory=/opt/ocs-ai-bridge
+User=ocsbridge
+Group=ocsbridge
+
+# 凭据与地址来自 .env（不要提交进仓库）
+EnvironmentFile=/opt/ocs-ai-bridge/.env
+
+ExecStart=/usr/bin/node --env-file-if-exists=.env /opt/ocs-ai-bridge/dist/server.js
+Restart=on-failure
+RestartSec=5
+
+# 优雅关闭：应用层会给正在作答的请求最多 30s 宽限期（可用 SHUTDOWN_GRACE_MS 调整），
+# 这里必须留出余量，否则 systemd 会先发 SIGKILL、宽限期形同虚设。
+KillSignal=SIGTERM
+TimeoutStopSec=45
+
+# 加固：服务只需要读自己的目录并出网
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ocs-ai-bridge
+
+[Install]
+WantedBy=multi-user.target
