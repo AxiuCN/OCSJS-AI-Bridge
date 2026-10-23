@@ -70,6 +70,8 @@ interface TestBackendOptions {
   hang?: boolean;
   delayMs?: number;
   advance?: (ms: number) => void;
+  /** 模拟适配器内部的容错说明（如空 content 自动重试） */
+  notes?: string[];
 }
 
 class TestBackend implements UpstreamBackend {
@@ -101,7 +103,9 @@ class TestBackend implements UpstreamBackend {
     }
     const output = this.options.output;
     const text = typeof output === "function" ? output() : (output ?? '{"answer":"A","confidence":0.8}');
-    return { text };
+    const response: RawResponse = { text };
+    if (this.options.notes) response.notes = this.options.notes;
+    return response;
   }
 }
 
@@ -229,6 +233,21 @@ describe("routing：候选链与降级", () => {
     });
     const engine = makeEngine({ config, stubs: [], clock });
     assert.throws(() => engine.routeFor("judgement"), /没有匹配题型 judgement/u);
+  });
+
+  it("适配器内部的容错说明（如空正文重试）要并入 warnings，不能悄悄吞掉", async () => {
+    const clock = makeClock();
+    const stub = new TestBackend("local", {
+      output: '{"answer":"A"}',
+      notes: ["上游首次未返回正文（空 content），已关闭 thinking 重试成功"],
+    });
+    const config = makeConfig({ backends: [backendConfig({ name: "local" })] });
+    const engine = makeEngine({ config, stubs: [stub], clock });
+    const outcome = await engine.answer(singleChoice, new AbortController().signal);
+    assert.ok(
+      outcome.warnings.some((item) => item.includes("重试成功")),
+      `warnings 应包含适配器容错说明，实际为 ${JSON.stringify(outcome.warnings)}`,
+    );
   });
 });
 

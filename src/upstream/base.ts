@@ -14,6 +14,8 @@ export interface RawResponse {
   text: string;
   /** 上游返回的用量信息；拿不到就是 undefined，不编造 */
   usage?: Record<string, unknown>;
+  /** 适配器内部做过的容错处理（如自动重试），最终并入响应 warnings */
+  notes?: string[];
 }
 
 export interface UpstreamRequestContext {
@@ -36,7 +38,7 @@ export interface UpstreamBackend {
 
 /** 上游级失败：可被路由层降级到下一个候选。 */
 export class UpstreamError extends Error {
-  override readonly name = "UpstreamError";
+  override readonly name: string = "UpstreamError";
   constructor(
     message: string,
     readonly backendName: string,

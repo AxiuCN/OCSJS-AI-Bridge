@@ -169,7 +169,7 @@ export class AnswerEngine {
           answer,
           confidence: parsed.confidence,
           model: `${name}/${candidate.config.model}`,
-          warnings: [...warnings, ...parsed.notes],
+          warnings: [...warnings, ...(raw.notes ?? []), ...parsed.notes],
         };
       } catch (error) {
         const elapsedMs = this.now() - startedAt;

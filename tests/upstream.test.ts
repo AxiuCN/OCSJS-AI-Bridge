@@ -17,7 +17,7 @@ import {
   postJson,
   type UpstreamRequestContext,
 } from "../src/upstream/base.js";
-import { OllamaBackend, buildOllamaBody, buildOllamaResponse, extractBase64 } from "../src/upstream/ollama.js";
+import { OllamaBackend, OllamaEmptyContentError, buildOllamaBody, buildOllamaResponse, extractBase64 } from "../src/upstream/ollama.js";
 import { OpenAiChatBackend, buildChatBody, buildChatResponse } from "../src/upstream/openai_chat.js";
 import { OpenAiResponsesBackend, buildResponsesBody, buildResponsesResponse } from "../src/upstream/openai_responses.js";
 
@@ -219,6 +219,86 @@ describe("upstream：Ollama（/api/chat）", () => {
     assert.equal(calls[0]!.url, "http://x.test/api/chat");
     assert.equal(calls[0]!.method, "POST");
     assert.equal(calls[0]!.headers["content-type"], "application/json");
+  });
+
+  it("空 content 的错误必须带够诊断字段，否则线上无法定位", () => {
+    assert.throws(
+      () =>
+        buildOllamaResponse(
+          { message: { content: "", thinking: "abc" }, done_reason: "stop", eval_count: 42 },
+          "ollama-local",
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof OllamaEmptyContentError);
+        assert.equal(error.kind, "empty");
+        assert.match(error.message, /done_reason=stop/u);
+        assert.match(error.message, /eval_count=42/u);
+        assert.match(error.message, /thinking 长度=3/u);
+        return true;
+      },
+    );
+  });
+
+  it("缺字段与空字符串要能区分，便于判断是格式变化还是空输出", () => {
+    assert.throws(
+      () => buildOllamaResponse({ message: {}, done_reason: "stop" }, "b"),
+      (error: unknown) => {
+        assert.ok(error instanceof OllamaEmptyContentError);
+        assert.equal(error.kind, "missing");
+        assert.match(error.message, /响应键=/u);
+        return true;
+      },
+    );
+  });
+
+  it("空 content 会自动关闭 thinking 重试一次，并把过程写入 notes", async () => {
+    let call = 0;
+    const { impl, calls } = stubFetch(() => {
+      call += 1;
+      if (call === 1) {
+        return jsonResponse({ message: { content: "", thinking: "很长的思考" }, done_reason: "stop", eval_count: 10 });
+      }
+      return jsonResponse({ message: { content: ANSWER_JSON }, done_reason: "stop", eval_count: 20 });
+    });
+    const backend = new OllamaBackend({ name: "ollama-local", url: "http://x.test/api/chat", fetchImpl: impl });
+    const raw = await backend.complete(context({ think: true }));
+
+    assert.equal(raw.text, ANSWER_JSON);
+    assert.equal(calls.length, 2, "应恰好重试一次");
+    assert.equal((calls[0]!.body as Record<string, unknown>).think, true, "首次按配置开启思考");
+    // 关闭思考时不发送 think 字段（而不是发 false），验证重试请求里没有它
+    assert.ok(!("think" in (calls[1]!.body as Record<string, unknown>)), "重试时应不发送 think 字段");
+    assert.equal(raw.notes?.length, 1);
+    assert.match(raw.notes![0]!, /重试成功/u);
+  });
+
+  it("重试仍为空则抛错，绝不伪造答案", async () => {
+    const { impl, calls } = stubFetch(() =>
+      jsonResponse({ message: { content: "" }, done_reason: "stop", eval_count: 5 }),
+    );
+    const backend = new OllamaBackend({ name: "ollama-local", url: "http://x.test/api/chat", fetchImpl: impl });
+    await assert.rejects(
+      () => backend.complete(context({ think: true })),
+      (error: unknown) => {
+        assert.ok(error instanceof OllamaEmptyContentError);
+        return true;
+      },
+    );
+    assert.equal(calls.length, 2, "只重试一次，避免在坏上游上无限消耗预算");
+  });
+
+  it("思考关闭时出现空 content 也会重试一次", async () => {
+    let call = 0;
+    const { impl, calls } = stubFetch(() => {
+      call += 1;
+      return call === 1
+        ? jsonResponse({ message: { content: "" }, done_reason: "stop" })
+        : jsonResponse({ message: { content: ANSWER_JSON } });
+    });
+    const backend = new OllamaBackend({ name: "ollama-local", url: "http://x.test/api/chat", fetchImpl: impl });
+    const raw = await backend.complete(context({ think: false }));
+    assert.equal(raw.text, ANSWER_JSON);
+    assert.equal(calls.length, 2);
   });
 });
 
