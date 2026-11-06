@@ -4,7 +4,7 @@
     "homepage": "https://your-service.example.com/health",
     "url": "https://your-service.example.com/v1/answer",
     "method": "post",
-    "contentType": "json",
+    "responseType": "json",
     "type": "GM_xmlhttpRequest",
     "headers": {
       "Content-Type": "application/json",
@@ -13,7 +13,10 @@
     "data": {
       "title": "${title}",
       "options": "${options}",
-      "type": "${type}"
+      "type": "${type}",
+      "images": {
+        "handler": "return (env) => env.images"
+      }
     },
     "handler": "return (res) => res.code === 1 ? [res.question, res.answer] : [res.message || 'AI 桥接题库请求失败', undefined]"
   }

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0
+
+**适配 OCSJS 5.x：图片题改由 OCS 直传，服务端不再重复下载**
+
+- **图片题优化（v2 题库配置）**：OCSJS 5.x 新增 `env.images` / `env.suggestion_title` / `env.suggestion_options`，浏览器自己把题干与选项里的图片下载并转成 PNG data URL 后随请求提交。题库配置改用 `data.images` 字段解析器（`return (env) => env.images`）提交数组——**不能写成 `"images": "${images}"`**：占位符替换是字符串替换，数组会被逗号拼接并破坏 data URL。
+- **服务端按顺序绑定**：`normalize.ts` 在收到的 data URL 数量与自身解析出的图片数量一致时，按出现顺序把图片绑回「题干/材料图片 N」「选项 X 图片 N」标签；数量不一致时退回原逻辑，不强行配对以免错位。
+- **不再重复下载**：已有 data URL 的附件直接使用，服务端只为没有 data URL 的图片发起下载。原先「浏览器送一张、服务端再下一次」的重复开销，以及超星图片的登录态/防盗链失败，都随之消失。
+- **协议字段更新**：模板 `contentType` 改为 `responseType`（`contentType` 在 5.x 已标记废弃，旧写法仍兼容）。
+- **域名白名单**：5.x 会校验题库 URL 是否在脚本头 `@connect` 内；全域名通用版（`@connect *`）不受限，否则需手动添加。
+- **安全检测**：5.x 保存配置前会扫描 handler 中的危险特征（仅警告不阻断）。本模板 handler 只读 `res` 字段，不会触发。
+- 测试：新增「纯 data URL 顺序绑定」「数量不对齐不硬配」「已有 data URL 零下载」三项，全量 139 项通过。
+- 文档：`README.md` 新增「OCSJS 5.x」小节。
+
 ## 0.1.1
 
 **修复 Ollama 偶发空正文导致答题失败**

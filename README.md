@@ -53,11 +53,20 @@ curl http://127.0.0.1:8000/health
 - `https://your-service.example.com` → 你的服务地址
 - `change-me` → 与 `.env` 中 `SERVICE_ACCESS_TOKEN` 相同的值
 
-请求只使用原版 OCS 提供的三个字段（`title` / `options` / `type`），期望返回：
+请求使用原版 OCS 提供的 `title` / `options` / `type` 三个字段（5.x 可再加 `images`，见下），期望返回：
 
 ```js
 res.code === 1 ? [res.question, res.answer] : [res.message, undefined]
 ```
+
+### OCSJS 5.x
+
+模板已适配 5.x，可直接用：
+
+- `responseType: "json"` —— `contentType` 在 5.x 已标记废弃（旧写法仍能跑）
+- `data.images` 用**字段解析器**提交 `env.images` —— 5.x 会自己把题干/选项里的图片下载并转成 PNG data URL 传过来，服务端不必再按 URL 下载一次，能绕开超星图片的登录态/防盗链。**注意不能写成 `"images": "${images}"`**：占位符替换是字符串替换，数组会被逗号拼接、破坏 data URL。
+- 域名白名单：5.x 会校验题库 URL 是否在脚本头 `@connect` 里。用**全域名通用版**（`@connect *`）不受限；否则需把服务地址加进 `@connect`。
+- 保存配置前会做恶意代码检测（仅警告不阻断）。本模板的 handler 只读 `res` 字段，不会触发。
 
 建议的高级设置：
 

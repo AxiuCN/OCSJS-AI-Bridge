@@ -213,6 +213,12 @@ export function normalizeQuestion(payload: Record<string, unknown>): NormalizedQ
     deduplicated[existing] = { label: labels.join("；"), sourceUrl: item.sourceUrl, dataUrl: previous.dataUrl };
   }
 
+  // OCSJS 5.x 的图片题优化：题库配置通过 data.images.handler 提交纯 data URL 数组，
+  // 顺序与它内部的 [图片N] 严格一致（题干 URL 在前、选项 URL 在后）。
+  // 这些图片浏览器已经下载好了，服务端不该再按 URL 下载一遍，否则同一张图会重复上传。
+  const anonymousSupplied = supplied.filter((item) => !item.sourceUrl && item.dataUrl);
+  const allSuppliedAnonymous = supplied.length > 0 && anonymousSupplied.length === supplied.length;
+
   const suppliedByUrl = new Map<string, Attachment[]>();
   for (const item of supplied) {
     if (!item.sourceUrl) continue;
@@ -223,16 +229,28 @@ export function normalizeQuestion(payload: Record<string, unknown>): NormalizedQ
 
   const attachments: Attachment[] = [];
   const used = new Set<Attachment>();
-  for (const item of deduplicated) {
-    const candidates = suppliedByUrl.get(item.sourceUrl) ?? [];
-    const reused = candidates.find((candidate) => !used.has(candidate));
-    if (reused) {
-      used.add(reused);
-      attachments.push({ label: item.label, sourceUrl: item.sourceUrl, dataUrl: reused.dataUrl });
-    } else {
-      attachments.push(item);
+
+  if (allSuppliedAnonymous && anonymousSupplied.length === deduplicated.length) {
+    // 数量完全对齐时按顺序绑定，沿用服务端解析出的语义标签（题干/选项 N），
+    // 这样模型仍能知道每张图属于谁，同时不再触发服务端下载。
+    deduplicated.forEach((item, index) => {
+      const suppliedItem = anonymousSupplied[index]!;
+      used.add(suppliedItem);
+      attachments.push({ label: item.label, sourceUrl: item.sourceUrl, dataUrl: suppliedItem.dataUrl });
+    });
+  } else {
+    for (const item of deduplicated) {
+      const candidates = suppliedByUrl.get(item.sourceUrl) ?? [];
+      const reused = candidates.find((candidate) => !used.has(candidate));
+      if (reused) {
+        used.add(reused);
+        attachments.push({ label: item.label, sourceUrl: item.sourceUrl, dataUrl: reused.dataUrl });
+      } else {
+        attachments.push(item);
+      }
     }
   }
+
   for (const item of supplied) {
     if (!used.has(item)) attachments.push(item);
   }

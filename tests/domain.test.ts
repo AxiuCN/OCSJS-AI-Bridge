@@ -141,6 +141,48 @@ describe("normalize：题目归一", () => {
     assert.match(question.attachments[0]!.label, /subquestions 1\/options 1图片 1/u);
   });
 
+  it("OCSJS 5.x 纯 data URL 图片数组：数量对齐时按顺序绑定语义标签", () => {
+    const second = `data:image/png;base64,${Buffer.from("png2").toString("base64")}`;
+    const question = normalizeQuestion({
+      title: "看图 https://cx.test/stem.png 选择",
+      options: "甲 https://cx.test/a.png\n乙",
+      type: "single",
+      // 5.x 通过 data.images.handler 提交的就是纯 data URL 数组，没有 source_url
+      images: [PIXEL, second],
+    });
+    assert.equal(question.attachments.length, 2, "不应把同一批图片重复登记");
+    assert.equal(question.attachments[0]!.label, "题干/材料图片 1");
+    assert.equal(question.attachments[0]!.dataUrl, PIXEL);
+    assert.equal(question.attachments[1]!.label, "选项 A图片 1");
+    assert.equal(question.attachments[1]!.dataUrl, second);
+  });
+
+  it("数量不对齐时不强行配对，退回原行为并保留全部附件", () => {
+    const question = normalizeQuestion({
+      title: "看图 https://cx.test/stem.png 和 https://cx.test/b.png",
+      options: "甲",
+      type: "single",
+      images: [PIXEL], // 只给了一张，无法判断对应关系
+    });
+    // 两张来自文本的图片 + 一张浏览器提交的未分类图片
+    assert.equal(question.attachments.length, 3);
+    assert.equal(question.attachments.at(-1)!.label, "未分类图片 1");
+    assert.equal(question.attachments.at(-1)!.dataUrl, PIXEL);
+  });
+
+  it("浏览器已提交 data URL 时不再为同一批图片下载一次", async () => {
+    const { impl, calls } = fakeFetch(() => new Response("should not be called", { status: 500 }));
+    const question = normalizeQuestion({
+      title: "看图 https://cx.test/stem.png",
+      options: "甲",
+      type: "single",
+      images: [PIXEL],
+    });
+    const result = await prepare(question, { fetchImpl: impl });
+    assert.equal(result.images.length, 1);
+    assert.equal(calls.length, 0, "已有 data URL 时必须跳过服务端下载");
+  });
+
   it("挖空与选项拆分工具函数保持既有行为", () => {
     // 已有 [BLANK_2] 时，新挖空从 3 号开始编号（与原实现一致）
     assert.equal(normalizeBlanks("甲____乙 [BLANK_2]"), "甲[BLANK_3]乙 [BLANK_2]");

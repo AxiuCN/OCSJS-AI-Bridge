@@ -1,6 +1,6 @@
 {
   "name": "ocs-ai-bridge",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "OCSJS 题库协议 ↔ 可插拔 AI 后端 的适配服务",
   "type": "module",
