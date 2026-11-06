@@ -206,6 +206,19 @@ export function createApp(deps: AppDependencies): App {
         sendJson(res, 404, { code: 0, message: `未知路径 ${path}` });
         return;
       }
+      // OCS 题库列表的连通性探测（packages/scripts/src/utils/ui.ts 的 probeAnswerer）：
+      // 先发 HEAD，遇到 405/501 回退 GET，且**不携带任何请求头（含令牌）**；
+      // 只有 2xx~3xx 才显示「连接成功」。因此这里必须免鉴权地返回 2xx，
+      // 否则 OCS 界面会一直显示「连接失败（405/401）」。
+      if (method === "HEAD") {
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        res.end();
+        return;
+      }
+      if (method === "GET") {
+        sendJson(res, 200, { ok: true, service: "ocs-ai-bridge", version });
+        return;
+      }
       if (method !== "POST") {
         sendJson(res, 405, { code: 0, message: "/v1/answer 只支持 POST" });
         return;

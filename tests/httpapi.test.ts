@@ -152,11 +152,36 @@ describe("HTTP 接入层", () => {
     assert.match(String(((await notObject.json()) as Record<string, unknown>).message), /JSON 对象/);
   });
 
-  it("未知路径 404，错误方法 405", async () => {
+  it("未知路径 404", async () => {
     const notFound = await fetch(`${base}/nope`);
     assert.equal(notFound.status, 404);
-    const wrongMethod = await fetch(`${base}/v1/answer`, { method: "GET" });
-    assert.equal(wrongMethod.status, 405);
+  });
+
+  it("OCS 题库探测（HEAD → GET，不带令牌）必须返回 2xx", async () => {
+    // 依据 packages/scripts/src/utils/ui.ts 的 probeAnswerer：
+    // 先 HEAD，405/501 回退 GET，且不携带任何请求头；非 2xx~3xx 显示「连接失败」。
+    const head = await fetch(`${base}/v1/answer`, { method: "HEAD" });
+    assert.equal(head.status, 200, "HEAD 必须直接 200，避免 OCS 回退到 GET 后仍失败");
+
+    const get = await fetch(`${base}/v1/answer`);
+    assert.equal(get.status, 200, "GET 探测同样要 200");
+    const body = (await get.json()) as Record<string, unknown>;
+    assert.equal(body.ok, true);
+    assert.equal(body.service, "ocs-ai-bridge");
+    // 探测响应不得泄露令牌或后端地址
+    const text = JSON.stringify(body);
+    const { secrets, config } = testLoaded();
+    assert.ok(!text.includes(secrets.accessToken));
+    assert.ok(!text.includes(config.backends[0]!.baseUrl));
+  });
+
+  it("探测放行不影响 POST 鉴权：无令牌 POST 仍是 401", async () => {
+    const post = await fetch(`${base}/v1/answer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "题目" }),
+    });
+    assert.equal(post.status, 401);
   });
 
   it("引擎就绪后按 OCS 契约返回 code:1", async () => {
