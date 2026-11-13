@@ -1,11 +1,12 @@
-# OCS AI 桥接服务
+# OCSJS AI 桥接服务
 
-让 [OCSJS](https://github.com/ocsjs/ocsjs) 通过可插拔的 AI 后端完成课程题目自动作答，OCS 端只需填一份题库配置。
+**[OCSJS](https://github.com/ocsjs/ocsjs) 的 AI 答题协议桥接与多后端调度层** —— 把 OCSJS 的题库请求翻译成可插拔的 AI 后端调用，OCS 端只需填一份题库配置。
 
-- **对 OCS 零改动** — 实现与原版题库服务一致的 `POST /v1/answer` 协议，OCS 端只改题库配置（AnswererWrapper）
-- **后端不限定本地** — 本地 Ollama、在线 OpenAI 兼容服务、OpenAI Responses 服务都是平级的可插拔后端
-- **服务端决定路由** — 按题型选候选链，失败自动降级，全部在总时间预算内完成
-- **不伪造能力** — 解析失败、无图可读、后端无视觉能力等情况一律明确报错，绝不返回猜测的答案
+- **协议桥接** — 实现与原版题库服务一致的 `POST /v1/answer`，OCS 端零改动
+- **多后端编排** — 本地 Ollama、OpenAI 兼容、OpenAI Responses 平级可插拔；一份配置可挂多个后端
+- **动态策略路由** — 按题型选候选链，也可用 `policy.js` 按时段、开关或题目特征动态调整顺序
+- **多模态** — 图片题支持浏览器直传 data URL 或服务端下载，按后端能力自动过滤
+- **弹性降级** — 全程受总时间预算约束，失败自动换候选并给出原因，绝不返回猜测的答案
 
 > 运行期零第三方依赖，只需 Node.js 22.9+。服务本体已在 Windows 端到端实测，**Linux 未在开发环境实测** —— 部署前请先跑 `npm run doctor`（见「已知限制」）。
 
@@ -162,8 +163,15 @@ res.code === 1 ? [res.question, res.answer] : [res.message, undefined]
 每次请求前调用文件导出的 `decide(ctx)`，返回后端名数组（按尝试顺序）：
 
 ```js
+// 与宿主机时区无关的小时取法（服务器不是 UTC+8 时必需）
+function hourIn(now, timeZone = "Asia/Shanghai") {
+  return Number(
+    new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(now),
+  );
+}
+
 export function decide(ctx) {
-  const hour = ctx.now.getHours();
+  const hour = hourIn(ctx.now);
   if (ctx.hasImages) return ["deepseek-flash"];
   if (hour >= 22 || hour < 8) return ["qwen-deepseek", "deepseek-flash"]; // 夜间折扣
   if (ctx.questionType === "judgement") return ["ollama-local"];          // 简单题本地
@@ -288,3 +296,9 @@ src/
 - **验证范围（请先读这一条）** — 服务本体在开发环境（Windows）完成了端到端实测：题库协议、三种上游协议、路由与预算、并发、降级都有真实链路证据。
   **Linux 端未在开发环境实测**：开发机没有 Linux（无 WSL 发行版、无容器/虚拟化工具）。跨平台风险已通过契约测试与静态审计排除——运行期零第三方依赖、无原生模块、纯 ESM、未使用任何平台相关 API——但"没跑过"就是没跑过。
   所以**部署到任何平台前，请先运行 `npm run doctor`**：它会打印当前平台与架构，并真实请求配置里的每个后端。这是部署流程的第一步，不是遗留待办
+
+---
+
+## 许可
+
+代码以 GPL-3.0-only 授权，见 [LICENSE](LICENSE)。
