@@ -430,10 +430,13 @@ export function parseConfigDocument(raw: unknown, warnings: string[]): Config {
     policy = { file, timeoutMs };
   }
 
-  const referenced = new Set(routes.flatMap((route) => route.backends));
-  for (const backend of backends) {
-    if (!referenced.has(backend.name)) {
-      warnings.push(`后端 ${backend.name} 未被任何路由引用，当前不会收到请求`);
+  // 配置了策略钩子时，后端可以由 policy.js 动态选择，不再要求出现在 routes 里。
+  if (!policy) {
+    const referenced = new Set(routes.flatMap((route) => route.backends));
+    for (const backend of backends) {
+      if (!referenced.has(backend.name)) {
+        warnings.push(`后端 ${backend.name} 未被任何路由引用，当前不会收到请求`);
+      }
     }
   }
 

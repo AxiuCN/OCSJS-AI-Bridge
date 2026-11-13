@@ -294,6 +294,30 @@ describe("parseConfigDocument", () => {
     parseConfigDocument(validDocument({ unknown_section: { a: 1 } }), warnings);
     assert.ok(warnings.some((item) => item.includes("unknown_section")));
   });
+
+  it("配置了 policy 时，未出现在 routes 里的后端不再告警", () => {
+    // 策略钩子可以在运行时选择任意已配置后端，routes 之外的「未被引用」提示会误导。
+    const withoutPolicy: string[] = [];
+    parseConfigDocument(
+      validDocument({
+        backends: [validBackend({ name: "a" }), validBackend({ name: "b" })],
+        routes: [{ type: "*", backends: ["a"] }],
+      }),
+      withoutPolicy,
+    );
+    assert.ok(withoutPolicy.some((item) => item.includes("未被任何路由引用")));
+
+    const withPolicy: string[] = [];
+    parseConfigDocument(
+      validDocument({
+        backends: [validBackend({ name: "a" }), validBackend({ name: "b" })],
+        routes: [{ type: "*", backends: ["a"] }],
+        policy: { file: "./policy.js" },
+      }),
+      withPolicy,
+    );
+    assert.ok(!withPolicy.some((item) => item.includes("未被任何路由引用")));
+  });
 });
 
 describe("仓库内的配置文件", () => {

@@ -11,6 +11,7 @@ config.jsonc
 .env.*
 !.env.example
 ocs-answerer-wrapper.json
+policy.js
 
 # 本地备份
 *.bak
