@@ -147,6 +147,36 @@ export function decide(ctx) {
     assert.deepEqual(nightJudgement.candidates.map((item) => item.name), ["ollama-local"]);
   });
 
+  it("策略返回循环引用对象时不崩溃，回退默认顺序", async () => {
+    const file = writePolicy(`
+export function decide() {
+  const a = {};
+  a.self = a;
+  return [a];
+}
+`);
+    const evaluator = new PolicyEvaluator({ file, logger: silentLogger() });
+    const decision = await evaluator.decide(context());
+    assert.deepEqual(decision.candidates.map((item) => item.name), DEFAULT_ORDER);
+    assert.ok(decision.notes.some((note) => note.includes("无法识别")));
+  });
+
+  it("策略返回 BigInt 时不崩溃（序列化会抛 TypeError）", async () => {
+    const file = writePolicy("export function decide() { return [{ name: 1n }]; }");
+    const evaluator = new PolicyEvaluator({ file, logger: silentLogger() });
+    const decision = await evaluator.decide(context());
+    assert.deepEqual(decision.candidates.map((item) => item.name), DEFAULT_ORDER);
+    assert.ok(decision.notes.some((note) => note.includes("无法识别")));
+  });
+
+  it("未知后端被过滤，但仍有有效候选时继续使用（不回退）", async () => {
+    const file = writePolicy('export function decide() { return ["nope", "deepseek-flash"]; }');
+    const evaluator = new PolicyEvaluator({ file, logger: silentLogger() });
+    const decision = await evaluator.decide(context());
+    assert.deepEqual(decision.candidates.map((item) => item.name), ["deepseek-flash"]);
+    assert.ok(decision.notes.some((note) => note.includes("未配置的后端 nope")));
+  });
+
   it("热重载：文件修改后无需重启即生效", async () => {
     const file = writePolicy('export function decide() { return ["ollama-local"]; }');
     const evaluator = new PolicyEvaluator({ file, logger: silentLogger() });

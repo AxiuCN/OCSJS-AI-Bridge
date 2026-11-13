@@ -28,12 +28,23 @@
  * 约束：
  *   - 这里只决定候选链；超时预算、能力过滤、降级仍由服务端统一保证
  *   - 不要发网络请求、读大文件或同步等待——它会在每次答题前执行
+ *   - 超时只能中断异步等待，拦不住同步死循环
  *
  * 注意：下面用到的后端名必须与你的 config.jsonc 中 backends[].name 一致。
  */
 
+/**
+ * 与宿主机时区无关的"小时"取法。
+ * ctx.now 是宿主机本地时间，服务器时区不是 UTC+8 时直接 getHours() 会整体偏移。
+ */
+function hourIn(now, timeZone = "Asia/Shanghai") {
+  return Number(
+    new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(now),
+  );
+}
+
 export function decide(ctx) {
-  const hour = ctx.now.getHours();
+  const hour = hourIn(ctx.now);
 
   // 1) 图片题只交给有视觉能力的后端（服务端也会兜底过滤）
   if (ctx.hasImages) {

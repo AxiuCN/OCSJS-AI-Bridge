@@ -9,14 +9,14 @@ OCSJS AI 桥接服务 — 让 OCSJS（浏览器用户脚本）通过**可插拔�
 - **单入口**：`src/server.ts` → 加载配置 → 启动 HTTP → 优雅关闭
 - **分层**：接入层 `httpapi` → 领域层 `normalize`/`images`/`format` → 提示层 `prompt` → 路由层 `routing`/`policy` → 上游层 `upstream/*`；细节见 [`docs/架构.md`](docs/架构.md)
 - **运行期零第三方依赖**：只用 Node 标准库（`node:http`、`fetch`、`node:test`），Node ≥ 22.9
-- **回归**：`npm test`（当前 157 项）、`npm run typecheck`、`npm run build`
+- **回归**：`npm test`（当前 161 项）、`npm run typecheck`、`npm run build`
 - **部署自检**：`npm run doctor`（环境 / 配置 / 每个后端真实连通性）
 
 ### 快速参考
 
 | 命令 | 说明 |
 |---|---|
-| `npm test` | 单元与契约测试（157 项） |
+| `npm test` | 单元与契约测试（161 项） |
 | `npm run typecheck` | 源码 + 测试类型检查 |
 | `npm run build` | 编译到 `dist/` |
 | `npm start` | 构建产物启动（读 `.env` 与 `config.jsonc`） |
@@ -65,7 +65,7 @@ OCSJS AI 桥接服务 — 让 OCSJS（浏览器用户脚本）通过**可插拔�
 ## 测试
 
 ```bash
-npm test                      # 全量（157 项）
+npm test                      # 全量（161 项）
 npm run typecheck             # 类型检查
 npm run doctor                # 部署自检（真实上游）
 npm run smoke                 # 单后端真实链路（需要可用 Ollama）

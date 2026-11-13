@@ -56,6 +56,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * 安全预览任意值，供提示信息使用。
+ *
+ * JSON.stringify 遇到循环引用或 BigInt 会抛错——而这段代码可能位于策略的
+ * 正常返回路径上，一旦抛出就会冲出 decide()，导致整次作答失败。
+ * 这里必须吞掉序列化异常，只用于展示。
+ */
+function safePreview(value: unknown): string {
+  try {
+    const text = JSON.stringify(value);
+    if (typeof text === "string") return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+  } catch {
+    // 循环引用 / BigInt / Proxy 抛错时退到类型描述
+  }
+  try {
+    return Object.prototype.toString.call(value);
+  } catch {
+    return "无法展示的值";
+  }
+}
+
 /** 把策略返回值规范化为候选链：字符串或 { name, timeoutSeconds?, think? } 都接受。 */
 export function normalizeDecision(
   raw: unknown,
@@ -82,7 +103,7 @@ export function normalizeDecision(
     }
 
     if (!entry) {
-      notes.push(`策略返回了无法识别的候选项：${JSON.stringify(item)}`);
+      notes.push(`策略返回了无法识别的候选项：${safePreview(item)}`);
       continue;
     }
     if (!allowed.has(entry.name)) {
@@ -187,10 +208,19 @@ export class PolicyEvaluator {
       return fallback([`策略执行失败（${(error as Error).message}），已回退默认顺序`]);
     }
 
-    const { candidates, notes } = normalizeDecision(result, new Set(context.backendNames));
-    if (candidates.length === 0) {
-      return fallback([...notes, "策略未给出可用后端，已回退默认顺序"]);
+    // 规范化同样可能因异常值（循环引用 / Proxy / 非预期结构）抛错，
+    // 必须与策略执行同等地兜住——否则会冲出 decide()，让整次作答失败。
+    let normalized: { candidates: PolicyCandidate[]; notes: string[] };
+    try {
+      normalized = normalizeDecision(result, new Set(context.backendNames));
+    } catch (error) {
+      this.logger.warn("策略返回值无法解析，改用默认顺序", { reason: (error as Error).message });
+      return fallback([`策略返回值无法解析（${(error as Error).message}），已回退默认顺序`]);
     }
-    return { candidates, notes };
+
+    if (normalized.candidates.length === 0) {
+      return fallback([...normalized.notes, "策略未给出可用后端，已回退默认顺序"]);
+    }
+    return normalized;
   }
 }
