@@ -27,12 +27,11 @@ Thumbs.db
 .vscode/
 .idea/
 
-# DeepSeek Harness 工作区
+# DeepSeek Harness 工作区（CLAUDE.md / .claude/ 同理）
 .dsh/
-AGENTS.md
 
-# 开发过程文档（验收记录等，仅留本地，不入库）
-ACCEPTANCE.md
+# 入库文档：AGENTS.md 与 docs/（docs/private/ 放盘符、部署机与本机工作区，不入库）
+docs/private/
 
 # 套件临时产物（git 替身的编译产物、渲染样例图等）
 test/.test-tmp/
