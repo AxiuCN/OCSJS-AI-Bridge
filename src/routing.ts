@@ -13,6 +13,7 @@ import { formatOcsAnswer } from "./format.js";
 import { buildPrompt } from "./prompt.js";
 import { normalizeQuestion } from "./normalize.js";
 import { Semaphore, SemaphoreAbortedError } from "./semaphore.js";
+import { PolicyEvaluator, type PolicyCandidate } from "./policy.js";
 import { parseModelOutput, UpstreamError, type RawResponse, type UpstreamBackend } from "./upstream/base.js";
 import type { ImagePreparer } from "./images.js";
 import type { Logger } from "./logger.js";
@@ -56,12 +57,18 @@ export class AnswerEngine {
   private readonly images: ImagePreparer;
   private readonly candidates = new Map<string, BackendCandidate>();
   private readonly semaphores = new Map<string, Semaphore>();
+  private readonly policy: PolicyEvaluator;
 
   constructor(options: EngineOptions) {
     this.config = options.config;
     this.now = options.now ?? (() => Date.now());
     this.logger = options.logger;
     this.images = options.images;
+    this.policy = new PolicyEvaluator({
+      file: options.config.policy?.file,
+      timeoutMs: options.config.policy?.timeoutMs,
+      logger: options.logger,
+    });
     for (const candidate of options.backends) {
       this.candidates.set(candidate.config.name, candidate);
       this.semaphores.set(candidate.config.name, new Semaphore(candidate.config.maxConcurrency));
@@ -92,15 +99,18 @@ export class AnswerEngine {
   private planAttempt(
     context: AttemptContext,
     candidate: BackendConfig,
+    override?: PolicyCandidate,
   ): { timeoutSeconds: number; think: boolean } {
     const remaining = this.remainingSeconds(context);
-    const perAttempt = candidate.timeoutSeconds || this.config.server.deadlineSeconds;
+    const perAttempt = override?.timeoutSeconds ?? (candidate.timeoutSeconds || this.config.server.deadlineSeconds);
     const timeoutSeconds = Math.max(1, Math.min(perAttempt, remaining));
     const budgetTight = remaining < this.config.server.deadlineSeconds / 2;
-    return {
-      timeoutSeconds,
-      think: candidate.capabilities.thinking && !budgetTight,
-    };
+    // 策略显式指定的 think 优先于能力声明与预算启发式：由用户自己权衡
+    const think =
+      override?.think !== undefined
+        ? override.think
+        : candidate.capabilities.thinking && !budgetTight;
+    return { timeoutSeconds, think };
   }
 
   async answer(payload: AnswerRequestPayload, signal: AbortSignal): Promise<AnswerOutcome> {
@@ -112,12 +122,23 @@ export class AnswerEngine {
     warnings.push(...prepared.warnings);
 
     const hasImages = prepared.images.length > 0;
-    const candidateNames = this.routeFor(question.questionType);
+    const defaultNames = this.routeFor(question.questionType);
+    // 策略钩子只决定候选链；超时预算、能力过滤、降级仍由本层保证。
+    const decision = await this.policy.decide({
+      now: new Date(this.now()),
+      questionType: question.questionType,
+      hasImages,
+      imageCount: prepared.images.length,
+      backendNames: [...this.candidates.keys()],
+      defaultOrder: [...defaultNames],
+    });
+    warnings.push(...decision.notes);
     const context: AttemptContext = { now: this.now, startedAt: this.now(), signal };
     const prompt = buildPrompt(question, prepared.images);
     const failures: string[] = [];
 
-    for (const name of candidateNames) {
+    for (const entry of decision.candidates) {
+      const name = entry.name;
       const candidate = this.candidates.get(name);
       if (!candidate) {
         failures.push(`${name}: 配置中不存在该后端`);
@@ -140,7 +161,7 @@ export class AnswerEngine {
         continue;
       }
 
-      const plan = this.planAttempt(context, candidate.config);
+      const plan = this.planAttempt(context, candidate.config, entry);
       const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(plan.timeoutSeconds * 1000)]);
       const startedAt = this.now();
       try {

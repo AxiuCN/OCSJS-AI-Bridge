@@ -1,4 +1,4 @@
-﻿// OCS AI 桥接服务 · 配置示例
+// OCS AI 桥接服务 · 配置示例
 //
 // 复制为 config.jsonc 后按需修改（config.jsonc 已被 .gitignore 排除，不会提交）。
 // 语法为标准 JSON，额外支持 // 注释与尾随逗号。
@@ -108,4 +108,8 @@
     // 只配了本地后端时，写成 { "type": "*", "backends": ["ollama-local"] } 即可。
     { "type": "*", "backends": ["ollama-local"] }
   ]
+
+  // 可选：策略钩子。启用后每次请求前由该文件决定候选链（可动态关闭后端、按时段切换），
+  // 修改文件无需重启。示例见 policy.example.js 与 README「策略钩子」一节。
+  // "policy": { "file": "./policy.js", "timeout_ms": 100 }
 }

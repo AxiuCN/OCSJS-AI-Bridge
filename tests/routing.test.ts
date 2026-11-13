@@ -7,7 +7,10 @@
 
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
-import { describe, it } from "node:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, describe, it } from "node:test";
 
 import type { BackendConfig, Config } from "../src/types.js";
 import { ImagePreparer, type ImageLimits } from "../src/images.js";
@@ -41,6 +44,7 @@ function makeConfig(overrides: {
   backends: BackendConfig[];
   routes?: Config["routes"];
   deadlineSeconds?: number;
+  policy?: Config["policy"];
 }): Config {
   return {
     server: {
@@ -61,6 +65,7 @@ function makeConfig(overrides: {
     backends: overrides.backends,
     strategy: "auto",
     routes: overrides.routes ?? [{ type: "*", backends: overrides.backends.map((item) => item.name) }],
+    ...(overrides.policy ? { policy: overrides.policy } : {}),
   };
 }
 
@@ -429,5 +434,73 @@ describe("routing：题目级失败不降级", () => {
       /没有拿到任何可读图片/u,
     );
     assert.equal(stub.calls.length, 0, "题目级失败不得触发后端调用");
+  });
+});
+
+describe("routing：策略钩子", () => {
+  const workdir = mkdtempSync(join(tmpdir(), "ocs-routing-policy-"));
+  after(() => {
+    rmSync(workdir, { recursive: true, force: true });
+  });
+
+  function policyFile(name: string, source: string): string {
+    const file = join(workdir, `${name}.mjs`);
+    writeFileSync(file, source, "utf8");
+    return file;
+  }
+
+  it("策略可改变候选顺序，并覆盖 think 开关", async () => {
+    const file = policyFile("reorder", 'export function decide() { return [{ name: "secondary", think: true }]; }');
+    const clock = makeClock();
+    const primary = new TestBackend("primary", { output: '{"answer":"A"}' });
+    const secondary = new TestBackend("secondary", { output: '{"answer":"B"}' });
+    const config = makeConfig({
+      backends: [backendConfig({ name: "primary" }), backendConfig({ name: "secondary" })],
+      policy: { file, timeoutMs: 100 },
+    });
+    const engine = makeEngine({ config, stubs: [primary, secondary], clock });
+
+    const outcome = await engine.answer(singleChoice, new AbortController().signal);
+    assert.equal(outcome.answer, "2");
+    assert.equal(primary.calls.length, 0, "策略只给了 secondary，primary 不应被调用");
+    assert.equal(secondary.calls.length, 1);
+    assert.equal(secondary.calls[0]!.think, true, "策略的 think 覆盖应生效");
+  });
+
+  it("策略可在运行时关闭某个后端", async () => {
+    const file = policyFile(
+      "disable",
+      'export function decide(ctx) { return ctx.defaultOrder.filter((n) => n !== "primary"); }',
+    );
+    const clock = makeClock();
+    const primary = new TestBackend("primary", { output: '{"answer":"A"}' });
+    const secondary = new TestBackend("secondary", { output: '{"answer":"B"}' });
+    const config = makeConfig({
+      backends: [backendConfig({ name: "primary" }), backendConfig({ name: "secondary" })],
+      policy: { file, timeoutMs: 100 },
+    });
+    const engine = makeEngine({ config, stubs: [primary, secondary], clock });
+
+    const outcome = await engine.answer(singleChoice, new AbortController().signal);
+    assert.equal(outcome.answer, "2");
+    assert.equal(primary.calls.length, 0, "被策略过滤掉的后端不应收到请求");
+  });
+
+  it("策略抛错时回退默认顺序，并把原因写进 warnings", async () => {
+    const file = policyFile("broken", 'export function decide() { throw new Error("policy boom"); }');
+    const clock = makeClock();
+    const primary = new TestBackend("primary", { output: '{"answer":"A"}' });
+    const config = makeConfig({
+      backends: [backendConfig({ name: "primary" })],
+      policy: { file, timeoutMs: 100 },
+    });
+    const engine = makeEngine({ config, stubs: [primary], clock });
+
+    const outcome = await engine.answer(singleChoice, new AbortController().signal);
+    assert.equal(outcome.answer, "1", "回退默认顺序后仍能正常作答");
+    assert.ok(
+      outcome.warnings.some((item) => item.includes("policy boom")),
+      `warnings 应说明策略失败原因，实际为 ${JSON.stringify(outcome.warnings)}`,
+    );
   });
 });

@@ -10,6 +10,10 @@ config.jsonc
 .env
 .env.*
 !.env.example
+ocs-answerer-wrapper.json
+
+# 本地备份
+*.bak
 
 # 日志
 *.log

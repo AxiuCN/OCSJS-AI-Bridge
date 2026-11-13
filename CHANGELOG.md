@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0
+
+**新增策略钩子：按条件动态决定后端候选链**
+
+- 配置：顶层 `policy: { "file": "./policy.js", "timeout_ms": 100 }`，`file` 相对 config.jsonc 所在目录解析。
+- 脚本：每次请求前调用 `decide(ctx)`，返回后端名数组（按尝试顺序）。`ctx` 提供 `now` / `questionType` / `hasImages` / `imageCount` / `backendNames` / `defaultOrder`（不含题目文本）。
+- 返回值：字符串数组，或 `{ name, timeoutSeconds?, think? }` 数组以覆盖单次超时与思考开关；返回 `null` / `undefined` / 空数组则回退 `routes` 默认顺序。
+- 失败隔离：文件缺失、脚本抛错、执行超时（默认 100ms）、返回未配置的后端，一律回退默认顺序并把原因写入响应 `warnings`，不中断答题。
+- 热重载：按文件 mtime 监听，改完下一个请求即生效，无需重启。
+- 边界：策略只决定候选链；超时预算、能力过滤、降级仍由路由层保证，DIY 脚本绕不过去。
+- 示例：`policy.example.js`（夜间折扣、图片题路由、简单题走本地、云端优先）。
+- 测试：新增 16 项（策略 13 + 路由集成 3），全量 157 项通过。
+- 文档：`README.md` 新增「策略钩子」一节，`config.example.jsonc` 增加注释示例。
+
+## 0.2.1
+
+**修复 OCS 题库列表探测显示「连接失败（405）」**
+
+- 根因：OCS 的连通性探测（`probeAnswerer`）先发 HEAD，遇 405/501 回退 GET，且不携带令牌；只有 2xx~3xx 才显示「连接成功」。此前 `/v1/answer` 对两种方法都返回 405。
+- 现在 HEAD 返回 200（只发头），GET 返回 `{ok, service, version}`，两者免鉴权且不含令牌与后端地址；POST 鉴权与答题逻辑不变。
+- 测试：新增探测返回 2xx、不泄露敏感信息、POST 无令牌仍 401 三项。
+
 ## 0.2.0
 
 **适配 OCSJS 5.x：图片题改由 OCS 直传，服务端不再重复下载**

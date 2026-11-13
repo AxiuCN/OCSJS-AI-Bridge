@@ -148,6 +148,39 @@ res.code === 1 ? [res.question, res.answer] : [res.message, undefined]
 
 推荐起步策略：本地 Ollama 承担纯文本题，在线后端承担多选、主观题与图片题（按实测质量调整）。
 
+### 策略钩子（可选）
+
+`routes` 是静态规则；需要按时间、题目特征或临时开关动态决定时，可启用一个用户自写的 JS 文件：
+
+```jsonc
+"policy": {
+  "file": "./policy.js",   // 相对 config.jsonc 所在目录
+  "timeout_ms": 100        // 执行超时，超时回退默认顺序
+}
+```
+
+每次请求前调用文件导出的 `decide(ctx)`，返回后端名数组（按尝试顺序）：
+
+```js
+export function decide(ctx) {
+  const hour = ctx.now.getHours();
+  if (ctx.hasImages) return ["deepseek-flash"];
+  if (hour >= 22 || hour < 8) return ["qwen-deepseek", "deepseek-flash"]; // 夜间折扣
+  if (ctx.questionType === "judgement") return ["ollama-local"];          // 简单题本地
+  return ["deepseek-flash", "ollama-local"];
+}
+```
+
+`ctx` 提供 `now` / `questionType` / `hasImages` / `imageCount` / `backendNames` / `defaultOrder`。
+
+- 返回 `null`、`undefined` 或空数组 → 回退 `routes` 的默认顺序
+- **抛错、超时、返回未知后端名** → 回退默认并把原因写进响应 `warnings`（不会中断答题）
+- 想临时关闭某个后端：返回的数组里不含它即可
+- 可返回对象覆盖单次参数：`[{ name: "deepseek-flash", timeoutSeconds: 30, think: false }]`
+- **改文件无需重启**（按 mtime 热重载，下一个请求生效）
+
+完整示例见 `policy.example.js`。注意：`decide` 每次答题前都会执行，不要在里面发网络请求或做阻塞操作。
+
 ---
 
 ## 运行行为

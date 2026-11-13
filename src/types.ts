@@ -59,6 +59,14 @@ export interface AnswerConfig {
   requireDeclaredImages: boolean;
 }
 
+/** 可选的策略钩子：每次请求前由用户脚本决定候选链。 */
+export interface PolicyConfig {
+  /** 已解析为绝对路径 */
+  file: string;
+  /** 执行超时（毫秒），超时回退默认顺序 */
+  timeoutMs: number;
+}
+
 export interface Config {
   server: ServerConfig;
   limits: LimitsConfig;
@@ -66,6 +74,7 @@ export interface Config {
   backends: BackendConfig[];
   strategy: string;
   routes: RouteConfig[];
+  policy?: PolicyConfig;
 }
 
 /** 出网调用需要的明文凭据，与 Config 分离保存。 */

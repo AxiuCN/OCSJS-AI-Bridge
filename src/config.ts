@@ -6,7 +6,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import { expandDeep, findUnresolvedPlaceholders, loadEnvFile } from "./env.js";
 import { parseJsonc } from "./jsonc.js";
@@ -18,6 +18,7 @@ import {
   type BackendKind,
   type Config,
   type LoadedConfig,
+  type PolicyConfig,
   type RouteConfig,
   type Secrets,
 } from "./types.js";
@@ -46,7 +47,9 @@ export const TOP_LEVEL_KEYS = new Set([
   "backends",
   "strategy",
   "routes",
+  "policy",
 ]);
+export const POLICY_KEYS = new Set(["file", "timeout_ms"]);
 export const SERVER_KEYS = new Set(["listen", "access_token", "deadline_seconds", "max_body_bytes", "cors_origins"]);
 export const LIMITS_KEYS = new Set([
   "image_timeout_seconds",
@@ -416,6 +419,17 @@ export function parseConfigDocument(raw: unknown, warnings: string[]): Config {
     warnings.push('routes 中没有 type 为 "*" 的兜底路由：未命中的题型将无法作答');
   }
 
+  // 可选的策略钩子：路径此时可能还是相对路径，由 loadConfig 按配置文件所在目录解析。
+  const policyRaw = raw.policy;
+  let policy: PolicyConfig | undefined;
+  if (policyRaw !== undefined && policyRaw !== null) {
+    if (!isRecord(policyRaw)) fail("配置项 policy 必须是对象");
+    warnUnknownKeys(policyRaw, POLICY_KEYS, "policy", warnings);
+    const file = readString(policyRaw, "file", "policy.file", { required: true })!;
+    const timeoutMs = readNumber(policyRaw, "timeout_ms", "policy.timeout_ms", 100, { min: 1, max: 10_000 });
+    policy = { file, timeoutMs };
+  }
+
   const referenced = new Set(routes.flatMap((route) => route.backends));
   for (const backend of backends) {
     if (!referenced.has(backend.name)) {
@@ -449,6 +463,7 @@ export function parseConfigDocument(raw: unknown, warnings: string[]): Config {
     backends,
     strategy: strategy.toLowerCase(),
     routes,
+    ...(policy ? { policy } : {}),
   };
 }
 
@@ -501,5 +516,9 @@ export function loadConfig(options: LoadOptions = {}): LoadedConfig {
   const raw = loadConfigFile(path, warnings);
   const config = parseConfigDocument(raw, warnings);
   const secrets = collectSecrets(raw, config.backends);
+  // 策略文件按「配置文件所在目录」解析，便于每个 .dsh/<后端>/ 各自带一份策略
+  if (config.policy) {
+    config.policy = { ...config.policy, file: resolve(dirname(path), config.policy.file) };
+  }
   return { config, secrets, warnings };
 }
