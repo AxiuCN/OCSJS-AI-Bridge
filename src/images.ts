@@ -121,7 +121,7 @@ export class ImagePreparer {
   }
 
   private async downloadImage(url: string, signal: AbortSignal): Promise<string> {
-    const timeout = AbortSignal.timeout(this.limits.imageTimeoutSeconds * 1000);
+    const timeout = AbortSignal.timeout(Math.max(1, Math.floor(this.limits.imageTimeoutSeconds * 1000)));
     const combined = AbortSignal.any([signal, timeout]);
     let response: Response;
     try {

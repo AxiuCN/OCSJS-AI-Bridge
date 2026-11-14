@@ -49,6 +49,7 @@ export class Semaphore {
       };
       const grant = (): void => {
         signal.removeEventListener("abort", onAbort);
+        this.active += 1;
         resolve();
       };
       this.waiting.push(grant);

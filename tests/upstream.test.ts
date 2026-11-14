@@ -189,9 +189,9 @@ describe("upstream：Ollama（/api/chat）", () => {
     assert.match(String(messages[1]?.content), /\[图片：题干\/材料图片 1\]/u);
   });
 
-  it("think 为 false 时不发送该参数，避免给不支持的模型添麻烦", () => {
+  it("think 为 false 时明确关闭思考", () => {
     const body = buildOllamaBody(context({ think: false }), true);
-    assert.ok(!("think" in body));
+    assert.equal(body.think, false);
   });
 
   it("纯 base64 输入被原样接受，data URL 被剥离前缀", () => {
@@ -266,8 +266,7 @@ describe("upstream：Ollama（/api/chat）", () => {
     assert.equal(raw.text, ANSWER_JSON);
     assert.equal(calls.length, 2, "应恰好重试一次");
     assert.equal((calls[0]!.body as Record<string, unknown>).think, true, "首次按配置开启思考");
-    // 关闭思考时不发送 think 字段（而不是发 false），验证重试请求里没有它
-    assert.ok(!("think" in (calls[1]!.body as Record<string, unknown>)), "重试时应不发送 think 字段");
+    assert.equal((calls[1]!.body as Record<string, unknown>).think, false, "重试时明确关闭思考");
     assert.equal(raw.notes?.length, 1);
     assert.match(raw.notes![0]!, /重试成功/u);
   });

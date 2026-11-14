@@ -60,8 +60,8 @@ export function buildOllamaBody(context: UpstreamRequestContext, structuredOutpu
     ],
   };
   if (structuredOutput) body.format = "json";
-  // think 只在需要时显式下发，避免给不支持思考的模型带来额外失败面。
-  if (context.think) body.think = true;
+  // false 显式关闭思考，省略该字段会沿用模型默认值。
+  body.think = context.think;
   return body;
 }
 

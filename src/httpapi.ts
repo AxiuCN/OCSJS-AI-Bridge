@@ -254,7 +254,11 @@ export function createApp(deps: AppDependencies): App {
 
       const controller = new AbortController();
       const onAborted = () => controller.abort();
+      const onClosed = () => {
+        if (!res.writableEnded) controller.abort();
+      };
       req.once("aborted", onAborted);
+      res.once("close", onClosed);
       const deadline = setTimeout(() => controller.abort(), config.server.deadlineSeconds * 1000);
       try {
         const outcome = await deps.answer(payload, controller.signal);
@@ -275,6 +279,7 @@ export function createApp(deps: AppDependencies): App {
       } finally {
         clearTimeout(deadline);
         req.off("aborted", onAborted);
+        res.off("close", onClosed);
       }
     })().catch((error: unknown) => {
       logger.error("请求处理异常", { error });

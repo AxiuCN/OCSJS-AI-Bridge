@@ -103,7 +103,7 @@ export class AnswerEngine {
   ): { timeoutSeconds: number; think: boolean } {
     const remaining = this.remainingSeconds(context);
     const perAttempt = override?.timeoutSeconds ?? (candidate.timeoutSeconds || this.config.server.deadlineSeconds);
-    const timeoutSeconds = Math.max(1, Math.min(perAttempt, remaining));
+    const timeoutSeconds = Math.min(perAttempt, remaining);
     const budgetTight = remaining < this.config.server.deadlineSeconds / 2;
     // 策略显式指定的 think 优先于能力声明与预算启发式：由用户自己权衡
     const think =
@@ -162,7 +162,8 @@ export class AnswerEngine {
       }
 
       const plan = this.planAttempt(context, candidate.config, entry);
-      const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(plan.timeoutSeconds * 1000)]);
+      const timeoutMs = Math.max(1, Math.floor(plan.timeoutSeconds * 1000));
+      const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
       const startedAt = this.now();
       try {
         const raw = await this.runCandidate(candidate, {
