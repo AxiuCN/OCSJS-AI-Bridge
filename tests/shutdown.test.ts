@@ -99,8 +99,10 @@ describe("优雅关闭：真实 HTTP 服务", () => {
     assert.ok(address && typeof address === "object");
     const port = address.port;
 
+    // 等请求真正到达 server，而不是靠固定等待猜时序（否则慢机器上会被误判为挂起）。
+    const received = once(server, "request", { signal: AbortSignal.timeout(5000) });
     const inflight = fetch(`http://127.0.0.1:${port}/slow`, { signal: AbortSignal.timeout(5000) });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await received;
 
     let forced = false;
     gracefulShutdown(server, { graceMs: 5000, onForced: () => (forced = true) });
@@ -121,10 +123,12 @@ describe("优雅关闭：真实 HTTP 服务", () => {
     assert.ok(address && typeof address === "object");
     const port = address.port;
 
+    // 同上：确认连接已建立并进入 server，再开始宽限期计时。
+    const received = once(server, "request", { signal: AbortSignal.timeout(5000) });
     const inflight = fetch(`http://127.0.0.1:${port}/hang`, { signal: AbortSignal.timeout(5000) }).catch(
       (error: unknown) => error as Error,
     );
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await received;
 
     let forced = false;
     gracefulShutdown(server, { graceMs: 50, onForced: () => (forced = true) });

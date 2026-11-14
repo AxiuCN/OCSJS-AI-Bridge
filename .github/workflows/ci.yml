@@ -1,0 +1,52 @@
+# 持续集成：跨平台 × 多 Node 版本的回归。
+#
+# 项目硬约束要求 Windows 与 Linux 都能跑，因此矩阵覆盖两端；
+# Node 取 engines 声明的下界（22.9）与当前开发版本（24）。
+# 只跑可离线执行的检查：typecheck / 测试 / 构建。
+# smoke 与 doctor 需要真实上游，不在 CI 中执行。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [22, 24]
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 测试
+        run: npm test
+
+      - name: 构建
+        run: npm run build
