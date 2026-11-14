@@ -24,6 +24,9 @@ jobs:
   test:
     name: ${{ matrix.os }} / Node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
+    # 固定 UTC：测试不应依赖运行机器的本地时区，CI 必须覆盖这一场景
+    env:
+      TZ: UTC
     strategy:
       fail-fast: false
       matrix:

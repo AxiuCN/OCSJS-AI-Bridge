@@ -128,9 +128,17 @@ describe("policy：执行与回退", () => {
   });
 
   it("可读取上下文（题型 / 时间 / 是否带图）", async () => {
+    // 策略按指定时区取小时，不依赖运行机器的本地时区：
+    // CI 跑在 UTC 上，直接 getHours() 会把 23:00(+08:00) 读成 15 点。
     const file = writePolicy(`
+function hourIn(now) {
+  return Number(
+    new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Shanghai", hour: "numeric", hourCycle: "h23" }).format(now),
+  );
+}
+
 export function decide(ctx) {
-  const hour = ctx.now.getHours();
+  const hour = hourIn(ctx.now);
   if (ctx.hasImages) return ["deepseek-flash"];
   if (ctx.questionType === "judgement" && hour >= 22) return ["ollama-local"];
   return ["deepseek-flash", "ollama-local"];
