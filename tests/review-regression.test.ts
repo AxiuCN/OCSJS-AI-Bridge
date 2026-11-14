@@ -34,12 +34,24 @@ function config(timeoutSeconds = 30) {
 it("有效的小数秒图片超时转换为合法整数毫秒", async () => {
   const settings = config();
   let calls = 0;
+  // 8.001 秒在 IEEE754 下乘 1000 得 8000.999999999999（非整数），正是原缺陷的触发值。
   const images = new ImagePreparer({ ...settings.limits, imageTimeoutSeconds: 8.001, requireDeclaredImages: true }, async () => {
     calls += 1;
     return new Response(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]), { headers: { "content-type": "image/png" } });
   });
   const result = await images.prepare(normalizeQuestion({ title: "http://images.invalid/owned.png", type: "single" }), new AbortController().signal);
   assert.equal(calls, 1);
+  assert.equal(result.images.length, 1);
+});
+
+it("亚毫秒图片超时被抬到 1ms，而不是变成 0 或非法值", async () => {
+  const settings = config();
+  // 0.0005 秒 → 0.5ms，取整后为 0，必须被 Math.max(1, …) 抬到 1ms；
+  // 同时 Timeout 不接受 0，这条用例锁住下界。
+  const images = new ImagePreparer({ ...settings.limits, imageTimeoutSeconds: 0.0005, requireDeclaredImages: true }, async () =>
+    new Response(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]), { headers: { "content-type": "image/png" } }),
+  );
+  const result = await images.prepare(normalizeQuestion({ title: "http://images.invalid/owned.png", type: "single" }), new AbortController().signal);
   assert.equal(result.images.length, 1);
 });
 
@@ -66,7 +78,9 @@ it("排队请求获得额度后继续计入并发上限", async () => {
     thirdStarted = true;
     await task(entered3, gate3)();
   });
-  await delay(20);
+  // 用事件循环阶段而不是固定毫秒数：若缺陷存在，第三个任务会在当前微任务队列里
+  // 立即进入，setImmediate 必然能看到；若机器负载高，固定 20ms 反而可能误判为"未进入"。
+  await new Promise<void>((resolve) => setImmediate(resolve));
   const overtook = thirdStarted;
   gate2.resolve();
   await second;
